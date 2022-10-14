@@ -249,6 +249,20 @@ class GPT(nn.Module):
             token_embeddings[:,1::2,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
         elif actions is None and self.model_type == 'naive': # only happens at very first timestep of evaluation
             token_embeddings = state_embeddings
+        elif actions is not None and self.model_type == 'goal_conditioned':
+            goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+            action_embeddings = self.action_embeddings(actions.type(torch.long).squeeze(-1)) # (batch, block_size, n_embd)
+
+            token_embeddings = torch.zeros((states.shape[0], states.shape[1]*3 - int(targets is None), self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
+            token_embeddings[:,::3,:] = goal_state_embeddings - state_embeddings
+            token_embeddings[:,1::3,:] = state_embeddings
+            token_embeddings[:,2::3,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
+        elif actions is None and self.model_type == 'goal_conditioned': # only happens at very first timestep of evaluation
+            goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+
+            token_embeddings = torch.zeros((states.shape[0], states.shape[1]*2, self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
+            token_embeddings[:,::2,:] = goal_state_embeddings - state_embeddings # really just [:,0,:]
+            token_embeddings[:,1::2,:] = state_embeddings # really just [:,1,:]
         else:
             raise NotImplementedError()
 
@@ -262,9 +276,9 @@ class GPT(nn.Module):
         x = self.ln_f(x)
         logits = self.head(x)
 
-        if actions is not None and self.model_type == 'reward_conditioned':
+        if actions is not None and 'conditioned' in self.model_type:
             logits = logits[:, 1::3, :] # only keep predictions from state_embeddings
-        elif actions is None and self.model_type == 'reward_conditioned':
+        elif actions is None and 'conditioned' in self.model_type:
             logits = logits[:, 1:, :]
         elif actions is not None and self.model_type == 'naive':
             logits = logits[:, ::2, :] # only keep predictions from state_embeddings

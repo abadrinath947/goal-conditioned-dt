@@ -84,7 +84,7 @@ model = GPT(mconf)
 epochs = args.epochs
 tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_rate=6e-4,
                       lr_decay=True, warmup_tokens=512*20, final_tokens=2*len(train_dataset)*args.context_length*3,
-                      num_workers=4, seed=args.seed, model_type=args.model_type, game=args.game, max_timestep=max(timesteps))
+                      num_workers=1, seed=args.seed, model_type=args.model_type, game=args.game, max_timestep=max(timesteps))
 trainer = Trainer(model, train_dataset, None, tconf)
 
 trainer.train()
