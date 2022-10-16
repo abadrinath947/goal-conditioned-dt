@@ -298,9 +298,9 @@ class GPT(nn.Module):
 
         if targets is not None and self.model_type == 'goal_conditioned_dynamics':
             if actions is None:
-                next_state_embed = logits[:, ::2, :]
+                next_state_embed = logits[:, 1::2, :]
             elif actions is not None:
-                next_state_embed = logits[:, ::3, :]
+                next_state_embed = logits[:, 2::3, :]
             loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
 
         return logits, loss
