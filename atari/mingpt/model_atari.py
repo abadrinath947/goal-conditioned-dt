@@ -249,7 +249,7 @@ class GPT(nn.Module):
             token_embeddings[:,1::2,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
         elif actions is None and self.model_type == 'naive': # only happens at very first timestep of evaluation
             token_embeddings = state_embeddings
-        elif actions is not None and self.model_type == 'goal_conditioned':
+        elif actions is not None and 'goal_conditioned' in self.model_type:
             goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
             action_embeddings = self.action_embeddings(actions.type(torch.long).squeeze(-1)) # (batch, block_size, n_embd)
 
@@ -257,7 +257,7 @@ class GPT(nn.Module):
             token_embeddings[:,::3,:] = goal_state_embeddings - state_embeddings
             token_embeddings[:,1::3,:] = state_embeddings
             token_embeddings[:,2::3,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
-        elif actions is None and self.model_type == 'goal_conditioned': # only happens at very first timestep of evaluation
+        elif actions is None and 'goal_conditioned' in self.model_type: # only happens at very first timestep of evaluation
             goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
 
             token_embeddings = torch.zeros((states.shape[0], states.shape[1]*2, self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
@@ -279,7 +279,7 @@ class GPT(nn.Module):
         if actions is not None and 'conditioned' in self.model_type:
             logits = logits[:, 1::3, :] # only keep predictions from state_embeddings
         elif actions is None and 'conditioned' in self.model_type:
-            logits = logits[:, 1:, :]
+            logits = logits[:, 1::2,, :]
         elif actions is not None and self.model_type == 'naive':
             logits = logits[:, ::2, :] # only keep predictions from state_embeddings
         elif actions is None and self.model_type == 'naive':
@@ -287,9 +287,20 @@ class GPT(nn.Module):
         else:
             raise NotImplementedError()
 
+
+
+
         # if we are given some desired targets also calculate the loss
         loss = None
+
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
+
+        if targets is not None and self.model_type == 'goal_conditioned_dynamics':
+            if actions is None:
+                next_state_embed = logits[:, ::2, :]
+            elif actions is not None:
+                next_state_embed = logits[:, ::3, :]
+            loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
 
         return logits, loss
