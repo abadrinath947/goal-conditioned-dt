@@ -60,3 +60,24 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None, actions=N
         x = ix
 
     return x
+
+def autoregressive_forward_goal_state(model, state, timesteps, K, tau=0.1):
+    batch_size = state.shape[0]
+    block_size = model.get_block_size()
+
+    def t(lst):
+        tensor = torch.tensor(lst, dtype=torch.long).to(self.device).unsqueeze(1).unsqueeze(0)
+        return tensor if tensor.size(1) <= block_size//3 else tensor[:, -block_size//3:]
+
+    states, actions, rtgs = [], [], []
+
+    for t in range(K):
+        logits, state = model(t(states), actions=t(actions), timesteps=timesteps + t, return_states = True)
+
+        # use Gumbel softmax to select action
+        chosen_action = (F.gumbel_softmax(logits, tau=tau, hard=True) * torch.range(0, logits.shape[1]).unsqueeze(0)).sum(dim = 1)
+
+        actions.append(chosen_action)
+        states.append(state)
+
+    return states[-1]

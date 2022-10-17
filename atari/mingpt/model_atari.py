@@ -217,7 +217,7 @@ class GPT(nn.Module):
         return optimizer
 
     # state, action, and return
-    def forward(self, states, actions, targets=None, rtgs=None, timesteps=None):
+    def forward(self, states, actions, targets=None, rtgs=None, timesteps=None, goal=None, return_states = False):
         # states: (batch, block_size, 4*84*84)
         # actions: (batch, block_size, 1)
         # targets: (batch, block_size, 1)
@@ -250,7 +250,12 @@ class GPT(nn.Module):
         elif actions is None and self.model_type == 'naive': # only happens at very first timestep of evaluation
             token_embeddings = state_embeddings
         elif actions is not None and 'goal_conditioned' in self.model_type:
-            goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+            if goal is None:
+                goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+            else:
+                goal_state_embeddings = self.state_encoder(states.reshape(-1, 4, 84, 84).type(torch.float32).contiguous()) # (batch * block_size, n_embd)
+                goal_state_embeddings = goal_state_embeddings.reshape(goal.shape[0], goal.shape[1], self.config.n_embd) # (batch, block_size, n_embd)
+
             action_embeddings = self.action_embeddings(actions.type(torch.long).squeeze(-1)) # (batch, block_size, n_embd)
 
             token_embeddings = torch.zeros((states.shape[0], states.shape[1]*3 - int(targets is None), self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
@@ -258,7 +263,11 @@ class GPT(nn.Module):
             token_embeddings[:,1::3,:] = state_embeddings
             token_embeddings[:,2::3,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
         elif actions is None and 'goal_conditioned' in self.model_type: # only happens at very first timestep of evaluation
-            goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+            if goal is None:
+                goal_state_embeddings = state_embeddings[-1].unsqueeze(0) # (batch, block_size, n_embd)
+            else:
+                goal_state_embeddings = self.state_encoder(states.reshape(-1, 4, 84, 84).type(torch.float32).contiguous()) # (batch * block_size, n_embd)
+                goal_state_embeddings = goal_state_embeddings.reshape(goal.shape[0], goal.shape[1], self.config.n_embd) # (batch, block_size, n_embd)
 
             token_embeddings = torch.zeros((states.shape[0], states.shape[1]*2, self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
             token_embeddings[:,::2,:] = goal_state_embeddings - state_embeddings # really just [:,0,:]
@@ -296,11 +305,14 @@ class GPT(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
 
-        if targets is not None and self.model_type == 'goal_conditioned_dynamics':
+        if self.model_type == 'goal_conditioned_dynamics':
             if actions is None:
                 next_state_embed = logits[:, 1::2, :]
             elif actions is not None:
                 next_state_embed = logits[:, 2::3, :]
-            loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
+            if targets is not None:
+                loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
+            if return_states:
+                return logits, next_state_embed
 
         return logits, loss
