@@ -170,6 +170,8 @@ class Trainer:
                     raise NotImplementedError()
             elif self.config.model_type == 'goal_conditioned':
                 eval_return = self.get_returns(0)
+            elif self.config.model_type == 'goal_conditioned_dynamics':
+                eval_return = self.get_returns(0)
             else:
                 raise NotImplementedError()
 
