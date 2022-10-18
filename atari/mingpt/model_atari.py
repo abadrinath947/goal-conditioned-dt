@@ -138,6 +138,7 @@ class GPT(nn.Module):
         # decoder head
         self.ln_f = nn.LayerNorm(config.n_embd)
         if self.model_type == 'goal_conditioned_dynamics':
+            self.lambd = 0.5
             self.dynamics_head = nn.Sequential(nn.Linear(config.n_embd, config.n_embd), nn.Tanh())
 
         self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
@@ -315,7 +316,7 @@ class GPT(nn.Module):
             elif actions is not None:
                 next_state_embed = next_state_embed[:, 2::3, :]
             if targets is not None:
-                loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
+                loss = loss + self.lambd * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
             if return_states:
                 return logits, next_state_embed
 
