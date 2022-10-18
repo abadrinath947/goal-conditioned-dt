@@ -137,6 +137,9 @@ class GPT(nn.Module):
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layer)])
         # decoder head
         self.ln_f = nn.LayerNorm(config.n_embd)
+        if self.model_type == 'goal_conditioned_dynamics':
+            self.dynamics_head = nn.Sequential(nn.Linear(config.n_embd, config.n_embd), nn.Tanh())
+
         self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         self.block_size = config.block_size
@@ -288,7 +291,7 @@ class GPT(nn.Module):
         if actions is not None and 'conditioned' in self.model_type:
             logits = logits[:, 1::3, :] # only keep predictions from state_embeddings
         elif actions is None and 'conditioned' in self.model_type:
-            logits = logits[:, 1::2,, :]
+            logits = logits[:, 1::2, :]
         elif actions is not None and self.model_type == 'naive':
             logits = logits[:, ::2, :] # only keep predictions from state_embeddings
         elif actions is None and self.model_type == 'naive':
@@ -306,10 +309,11 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
 
         if self.model_type == 'goal_conditioned_dynamics':
+            next_state_embed = self.dynamics_head(x)
             if actions is None:
-                next_state_embed = logits[:, 1::2, :]
+                next_state_embed = next_state_embed[:, 1::2, :]
             elif actions is not None:
-                next_state_embed = logits[:, 2::3, :]
+                next_state_embed = next_state_embed[:, 2::3, :]
             if targets is not None:
                 loss = loss + 0.01 * F.mse_loss(next_state_embed[:, :-1], state_embeddings[:, 1:])
             if return_states:
