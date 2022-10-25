@@ -21,6 +21,7 @@ class DecisionTransformer(TrajectoryModel):
             hidden_size,
             max_length=None,
             max_ep_len=4096,
+            goal_conditioned=True,
             action_tanh=True,
             **kwargs
     ):
@@ -37,8 +38,10 @@ class DecisionTransformer(TrajectoryModel):
         # is that the positional embeddings are removed (since we'll add those ourselves)
         self.transformer = GPT2Model(config)
 
+        self.goal_conditioned = goal_conditioned
         self.embed_timestep = nn.Embedding(max_ep_len, hidden_size)
-        self.embed_return = torch.nn.Linear(1, hidden_size)
+        if not goal_conditioned:
+            self.embed_return = torch.nn.Linear(1, hidden_size)
         self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
         self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
 
@@ -51,7 +54,8 @@ class DecisionTransformer(TrajectoryModel):
         )
         self.predict_return = torch.nn.Linear(hidden_size, 1)
 
-    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None):
+    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, goal=None):
+        assert not self.goal_conditioned or goal is not None, 'must pass goal'
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
@@ -62,18 +66,21 @@ class DecisionTransformer(TrajectoryModel):
         # embed each modality with a different head
         state_embeddings = self.embed_state(states)
         action_embeddings = self.embed_action(actions)
-        returns_embeddings = self.embed_return(returns_to_go)
+        if self.goal_conditioned:
+            conditional_embeddings = self.embed_return(returns_to_go)
+        else:
+            conditional_embeddings = self.embed_state(goal) - state_embeddings
         time_embeddings = self.embed_timestep(timesteps)
 
         # time embeddings are treated similar to positional embeddings
         state_embeddings = state_embeddings + time_embeddings
         action_embeddings = action_embeddings + time_embeddings
-        returns_embeddings = returns_embeddings + time_embeddings
+        conditional_embeddings = conditional_embeddings + time_embeddings
 
         # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
         # which works nice in an autoregressive sense since states predict actions
         stacked_inputs = torch.stack(
-            (returns_embeddings, state_embeddings, action_embeddings), dim=1
+            (conditional_embeddings, state_embeddings, action_embeddings), dim=1
         ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size)
         stacked_inputs = self.embed_ln(stacked_inputs)
 
@@ -105,13 +112,15 @@ class DecisionTransformer(TrajectoryModel):
 
         states = states.reshape(1, -1, self.state_dim)
         actions = actions.reshape(1, -1, self.act_dim)
-        returns_to_go = returns_to_go.reshape(1, -1, 1)
+        if not self.goal_conditioned:
+            returns_to_go = returns_to_go.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
 
         if self.max_length is not None:
             states = states[:,-self.max_length:]
             actions = actions[:,-self.max_length:]
-            returns_to_go = returns_to_go[:,-self.max_length:]
+            if not self.goal_conditioned:
+                returns_to_go = returns_to_go[:,-self.max_length:]
             timesteps = timesteps[:,-self.max_length:]
 
             # pad all tokens to sequence length
@@ -124,9 +133,10 @@ class DecisionTransformer(TrajectoryModel):
                 [torch.zeros((actions.shape[0], self.max_length - actions.shape[1], self.act_dim),
                              device=actions.device), actions],
                 dim=1).to(dtype=torch.float32)
-            returns_to_go = torch.cat(
-                [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), device=returns_to_go.device), returns_to_go],
-                dim=1).to(dtype=torch.float32)
+            if not self.goal_conditioned:
+                returns_to_go = torch.cat(
+                    [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), device=returns_to_go.device), returns_to_go],
+                    dim=1).to(dtype=torch.float32)
             timesteps = torch.cat(
                 [torch.zeros((timesteps.shape[0], self.max_length-timesteps.shape[1]), device=timesteps.device), timesteps],
                 dim=1

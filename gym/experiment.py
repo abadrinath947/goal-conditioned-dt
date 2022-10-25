@@ -56,6 +56,8 @@ def experiment(
         max_ep_len = 100
         env_targets = [76, 40]
         scale = 10.
+    elif env_name == 'antmaze':
+        pass
     else:
         raise NotImplementedError
 
