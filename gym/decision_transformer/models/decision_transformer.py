@@ -22,7 +22,7 @@ class DecisionTransformer(TrajectoryModel):
             goal_dim=None,
             max_length=None,
             max_ep_len=4096,
-            goal_conditioned=True,
+            goal_conditioned=False,
             action_tanh=True,
             **kwargs
     ):
@@ -71,7 +71,7 @@ class DecisionTransformer(TrajectoryModel):
         # embed each modality with a different head
         state_embeddings = self.embed_state(states)
         action_embeddings = self.embed_action(actions)
-        if self.goal_conditioned:
+        if not self.goal_conditioned:
             conditional_embeddings = self.embed_return(returns_to_go)
         else:
             conditional_embeddings = self.embed_goal(goal) - state_embeddings

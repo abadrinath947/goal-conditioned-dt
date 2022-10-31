@@ -1,0 +1,6 @@
+gym==0.18.3
+mujoco-py==2.1.2.14
+numpy==1.23.3
+torch==1.8.1
+transformers==4.5.1
+wandb==0.9.1

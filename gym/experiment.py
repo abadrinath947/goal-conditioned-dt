@@ -1,3 +1,4 @@
+import d4rl
 import gym
 import numpy as np
 import torch
@@ -7,6 +8,8 @@ import argparse
 import pickle
 import random
 import sys
+
+from tqdm import tqdm
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
 from decision_transformer.models.decision_transformer import DecisionTransformer
@@ -57,7 +60,10 @@ def experiment(
         env_targets = [76, 40]
         scale = 10.
     elif env_name == 'antmaze':
-        pass
+        env = gym.make('antmaze-umaze-v2')
+        max_ep_len = 1000
+        env_targets = [1, 0] 
+        scale = 1
     else:
         raise NotImplementedError
 
@@ -71,6 +77,9 @@ def experiment(
     dataset_path = f'data/{env_name}-{dataset}-v2.pkl'
     with open(dataset_path, 'rb') as f:
         trajectories = pickle.load(f)
+
+    if variant['goal_conditioned']:
+        goal_dim = trajectories[0]['goals'].shape[-1]
 
     # save all path information into separate lists
     mode = variant.get('mode', 'normal')
@@ -126,6 +135,7 @@ def experiment(
         )
 
         s, a, r, d, rtg, timesteps, mask = [], [], [], [], [], [], []
+        g = []
         for i in range(batch_size):
             traj = trajectories[int(sorted_inds[batch_inds[i]])]
             si = random.randint(0, traj['rewards'].shape[0] - 1)
@@ -134,6 +144,8 @@ def experiment(
             s.append(traj['observations'][si:si + max_len].reshape(1, -1, state_dim))
             a.append(traj['actions'][si:si + max_len].reshape(1, -1, act_dim))
             r.append(traj['rewards'][si:si + max_len].reshape(1, -1, 1))
+            if variant['goal_conditioning']:
+                g.append(traj['goals'][si:si + max_len].reshape(1, -1, goal_dim))
             if 'terminals' in traj:
                 d.append(traj['terminals'][si:si + max_len].reshape(1, -1))
             else:
@@ -150,6 +162,7 @@ def experiment(
             s[-1] = (s[-1] - state_mean) / state_std
             a[-1] = np.concatenate([np.ones((1, max_len - tlen, act_dim)) * -10., a[-1]], axis=1)
             r[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), r[-1]], axis=1)
+            g[-1] = np.concatenate([np.zeros((1, max_len - tlen, goal_dim)), g[-1]], axis=1)
             d[-1] = np.concatenate([np.ones((1, max_len - tlen)) * 2, d[-1]], axis=1)
             rtg[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), rtg[-1]], axis=1) / scale
             timesteps[-1] = np.concatenate([np.zeros((1, max_len - tlen)), timesteps[-1]], axis=1)
@@ -206,7 +219,6 @@ def experiment(
                 f'target_{target_rew}_length_std': np.std(lengths),
             }
         return fn
-
     if model_type == 'dt':
         model = DecisionTransformer(
             state_dim=state_dim,
@@ -276,7 +288,7 @@ def experiment(
         )
         # wandb.watch(model)  # wandb has some bug
 
-    for iter in range(variant['max_iters']):
+    for iter in tqdm(range(variant['max_iters'])):
         outputs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
         if log_to_wandb:
             wandb.log(outputs)
@@ -304,6 +316,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_steps_per_iter', type=int, default=10000)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
+    parser.add_argument('--goal_conditioned', '-g', type=bool, default=False)
     
     args = parser.parse_args()
 
