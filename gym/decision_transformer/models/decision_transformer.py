@@ -19,6 +19,7 @@ class DecisionTransformer(TrajectoryModel):
             state_dim,
             act_dim,
             hidden_size,
+            goal_dim=None,
             max_length=None,
             max_ep_len=4096,
             goal_conditioned=True,
@@ -42,6 +43,10 @@ class DecisionTransformer(TrajectoryModel):
         self.embed_timestep = nn.Embedding(max_ep_len, hidden_size)
         if not goal_conditioned:
             self.embed_return = torch.nn.Linear(1, hidden_size)
+        elif goal_conditioned and goal_dim is not None:
+            self.embed_goal = torch.nn.Linear(goal_dim, hidden_size)
+        else:
+            raise ValueError("need either goal_dim or no goal_conditioning")
         self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
         self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
 
@@ -69,7 +74,7 @@ class DecisionTransformer(TrajectoryModel):
         if self.goal_conditioned:
             conditional_embeddings = self.embed_return(returns_to_go)
         else:
-            conditional_embeddings = self.embed_state(goal) - state_embeddings
+            conditional_embeddings = self.embed_goal(goal) - state_embeddings
         time_embeddings = self.embed_timestep(timesteps)
 
         # time embeddings are treated similar to positional embeddings
