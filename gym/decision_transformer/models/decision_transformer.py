@@ -44,6 +44,7 @@ class DecisionTransformer(TrajectoryModel):
         if not goal_conditioned:
             self.embed_return = torch.nn.Linear(1, hidden_size)
         elif goal_conditioned and goal_dim is not None:
+            self.goal_dim = goal_dim
             self.embed_goal = torch.nn.Linear(goal_dim, hidden_size)
         else:
             raise ValueError("need either goal_dim or no goal_conditioning")
@@ -59,8 +60,8 @@ class DecisionTransformer(TrajectoryModel):
         )
         self.predict_return = torch.nn.Linear(hidden_size, 1)
 
-    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, goal=None):
-        assert not self.goal_conditioned or goal is not None, 'must pass goal'
+    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, goals=None):
+        assert not self.goal_conditioned or goals is not None, 'must pass goal'
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
@@ -74,7 +75,7 @@ class DecisionTransformer(TrajectoryModel):
         if not self.goal_conditioned:
             conditional_embeddings = self.embed_return(returns_to_go)
         else:
-            conditional_embeddings = self.embed_goal(goal) - state_embeddings
+            conditional_embeddings = self.embed_goal(goals) - state_embeddings
         time_embeddings = self.embed_timestep(timesteps)
 
         # time embeddings are treated similar to positional embeddings
@@ -119,11 +120,14 @@ class DecisionTransformer(TrajectoryModel):
         actions = actions.reshape(1, -1, self.act_dim)
         if not self.goal_conditioned:
             returns_to_go = returns_to_go.reshape(1, -1, 1)
+        else:
+            goal = kwargs['goals'].reshape(1, -1, self.goal_dim)
         timesteps = timesteps.reshape(1, -1)
 
         if self.max_length is not None:
             states = states[:,-self.max_length:]
             actions = actions[:,-self.max_length:]
+            goal = goal[:, -self.max_length:]
             if not self.goal_conditioned:
                 returns_to_go = returns_to_go[:,-self.max_length:]
             timesteps = timesteps[:,-self.max_length:]
@@ -141,6 +145,10 @@ class DecisionTransformer(TrajectoryModel):
             if not self.goal_conditioned:
                 returns_to_go = torch.cat(
                     [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), device=returns_to_go.device), returns_to_go],
+                    dim=1).to(dtype=torch.float32)
+            else:
+                kwargs['goals'] = torch.cat(
+                    [torch.zeros((goal.shape[0], self.max_length-goal.shape[1], self.goal_dim), device=goal.device), goal],
                     dim=1).to(dtype=torch.float32)
             timesteps = torch.cat(
                 [torch.zeros((timesteps.shape[0], self.max_length-timesteps.shape[1]), device=timesteps.device), timesteps],

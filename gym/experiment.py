@@ -11,7 +11,7 @@ import sys
 
 from tqdm import tqdm
 
-from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
+from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg, evaluate_episode_goal
 from decision_transformer.models.decision_transformer import DecisionTransformer
 from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
@@ -80,6 +80,8 @@ def experiment(
 
     if variant['goal_conditioned']:
         goal_dim = trajectories[0]['goals'].shape[-1]
+    else:
+        goal_dim = None
 
     # save all path information into separate lists
     mode = variant.get('mode', 'normal')
@@ -144,7 +146,7 @@ def experiment(
             s.append(traj['observations'][si:si + max_len].reshape(1, -1, state_dim))
             a.append(traj['actions'][si:si + max_len].reshape(1, -1, act_dim))
             r.append(traj['rewards'][si:si + max_len].reshape(1, -1, 1))
-            if variant['goal_conditioning']:
+            if variant['goal_conditioned']:
                 g.append(traj['goals'][si:si + max_len].reshape(1, -1, goal_dim))
             if 'terminals' in traj:
                 d.append(traj['terminals'][si:si + max_len].reshape(1, -1))
@@ -162,7 +164,8 @@ def experiment(
             s[-1] = (s[-1] - state_mean) / state_std
             a[-1] = np.concatenate([np.ones((1, max_len - tlen, act_dim)) * -10., a[-1]], axis=1)
             r[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), r[-1]], axis=1)
-            g[-1] = np.concatenate([np.zeros((1, max_len - tlen, goal_dim)), g[-1]], axis=1)
+            if variant['goal_conditioned']:
+                g[-1] = np.concatenate([np.zeros((1, max_len - tlen, goal_dim)), g[-1]], axis=1)
             d[-1] = np.concatenate([np.ones((1, max_len - tlen)) * 2, d[-1]], axis=1)
             rtg[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), rtg[-1]], axis=1) / scale
             timesteps[-1] = np.concatenate([np.zeros((1, max_len - tlen)), timesteps[-1]], axis=1)
@@ -171,11 +174,14 @@ def experiment(
         s = torch.from_numpy(np.concatenate(s, axis=0)).to(dtype=torch.float32, device=device)
         a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.float32, device=device)
         r = torch.from_numpy(np.concatenate(r, axis=0)).to(dtype=torch.float32, device=device)
+        if variant['goal_conditioned']:
+            g = torch.from_numpy(np.concatenate(g, axis=0)).to(dtype=torch.float32, device=device)
         d = torch.from_numpy(np.concatenate(d, axis=0)).to(dtype=torch.long, device=device)
         rtg = torch.from_numpy(np.concatenate(rtg, axis=0)).to(dtype=torch.float32, device=device)
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.long, device=device)
         mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=device)
-
+        if variant['goal_conditioned']:
+            return s, a, r, d, g, timesteps, mask
         return s, a, r, d, rtg, timesteps, mask
 
     def eval_episodes(target_rew):
@@ -184,7 +190,8 @@ def experiment(
             for _ in range(num_eval_episodes):
                 with torch.no_grad():
                     if model_type == 'dt':
-                        ret, length = evaluate_episode_rtg(
+                        eval_fn = evaluate_episode_goal if variant['goal_conditioned'] else evaluate_episode_rtg
+                        ret, length = eval_fn(
                             env,
                             state_dim,
                             act_dim,
@@ -225,6 +232,8 @@ def experiment(
             act_dim=act_dim,
             max_length=K,
             max_ep_len=max_ep_len,
+            goal_dim=goal_dim if variant['goal_conditioned'] else None,
+            goal_conditioned=variant['goal_conditioned'],
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
             n_head=variant['n_head'],
@@ -267,6 +276,7 @@ def experiment(
             scheduler=scheduler,
             loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
             eval_fns=[eval_episodes(tar) for tar in env_targets],
+            goal_conditioned=variant['goal_conditioned']
         )
     elif model_type == 'bc':
         trainer = ActTrainer(

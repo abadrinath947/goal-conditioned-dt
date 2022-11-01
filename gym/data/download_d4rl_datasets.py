@@ -87,7 +87,7 @@ datasets = []
 # for env_name in ['halfcheetah', 'hopper', 'walker2d']:
 for env_name in ['antmaze']:
     # for dataset_type in ['medium', 'medium-replay', 'expert']:
-    for dataset_type in ['umaze']:
+    for dataset_type in ['medium-play']:
         name = f'{env_name}-{dataset_type}-v2'
         env = gym.make(name)
         dataset = process_dataset(env)

@@ -12,6 +12,7 @@ class SequenceTrainer(Trainer):
 
         state_preds, action_preds, reward_preds = self.model.forward(
             states, actions, rewards, rtg[:,:-1], timesteps, attention_mask=attention_mask,
+            goals = rtg if self.kwargs['goal_conditioned'] else None
         )
 
         act_dim = action_preds.shape[2]

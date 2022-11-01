@@ -8,7 +8,7 @@ import time
 
 class Trainer:
 
-    def __init__(self, model, optimizer, batch_size, get_batch, loss_fn, scheduler=None, eval_fns=None):
+    def __init__(self, model, optimizer, batch_size, get_batch, loss_fn, scheduler=None, eval_fns=None, **kwargs):
         self.model = model
         self.optimizer = optimizer
         self.batch_size = batch_size
@@ -17,6 +17,7 @@ class Trainer:
         self.scheduler = scheduler
         self.eval_fns = [] if eval_fns is None else eval_fns
         self.diagnostics = dict()
+        self.kwargs = kwargs
 
         self.start_time = time.time()
 
