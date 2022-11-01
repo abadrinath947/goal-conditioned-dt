@@ -60,7 +60,7 @@ def experiment(
         env_targets = [76, 40]
         scale = 10.
     elif env_name == 'antmaze':
-        env = gym.make('antmaze-umaze-v2')
+        env = gym.make('antmaze-medium-play-v2')
         max_ep_len = 1000
         env_targets = [1, 0] 
         scale = 1
