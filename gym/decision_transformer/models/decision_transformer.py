@@ -75,7 +75,7 @@ class DecisionTransformer(TrajectoryModel):
         if not self.goal_conditioned:
             conditional_embeddings = self.embed_return(returns_to_go)
         else:
-            conditional_embeddings = self.embed_goal(goals) - state_embeddings
+            conditional_embeddings = self.embed_goal(goals) - self.embed_goal(states[..., :self.goal_dim])
         time_embeddings = self.embed_timestep(timesteps)
 
         # time embeddings are treated similar to positional embeddings
