@@ -16,15 +16,7 @@ from decision_transformer.models.decision_transformer import DecisionTransformer
 from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
-
-
-def discount_cumsum(x, gamma):
-    discount_cumsum = np.zeros_like(x)
-    discount_cumsum[-1] = x[-1]
-    for t in reversed(range(x.shape[0]-1)):
-        discount_cumsum[t] = x[t] + gamma * discount_cumsum[t+1]
-    return discount_cumsum
-
+from data.dataset import D4RLIterableDataset
 
 def experiment(
         exp_prefix,
@@ -79,7 +71,7 @@ def experiment(
         trajectories = pickle.load(f)
 
     if variant['goal_conditioned']:
-        goal_dim = trajectories[0]['infos/goal'].shape[-1]
+        goal_dim = trajectories[0]['goals'].shape[-1]
     else:
         goal_dim = None
 
@@ -128,9 +120,11 @@ def experiment(
     # used to reweight sampling so we sample according to timesteps instead of trajectories
     p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
 
-    dataset = D4RLIterableDataset(trajectories, p_sample = p_sample, epoch_size = 1e5, 
+    dataset = D4RLIterableDataset(trajectories, p_sample = p_sample, epoch_size = None, 
                                   index_batch_size = batch_size, goal_columns = (0, 1),
-                                  config = variant)
+                                  config = variant, state_dim = state_dim, act_dim = act_dim,
+                                  goal_dim = goal_dim, state_mean = state_mean, state_std = state_std,
+                                  max_ep_len = max_ep_len, sorted_inds = sorted_inds)
     get_batch = dataset._sample_batch
 
     def eval_episodes(target_rew):
