@@ -79,7 +79,7 @@ def experiment(
         trajectories = pickle.load(f)
 
     if variant['goal_conditioned']:
-        goal_dim = trajectories[0]['goals'].shape[-1]
+        goal_dim = trajectories[0]['infos/goal'].shape[-1]
     else:
         goal_dim = None
 
@@ -140,14 +140,17 @@ def experiment(
         g = []
         for i in range(batch_size):
             traj = trajectories[int(sorted_inds[batch_inds[i]])]
-            si = random.randint(0, traj['rewards'].shape[0] - 1)
+            si1 = random.randint(0, traj['rewards'].shape[0] - 1)
+            si2 = random.randint(0, traj['rewards'].shape[0] - 1)
+
+            si = min(si1, si2)
 
             # get sequences from dataset
             s.append(traj['observations'][si:si + max_len].reshape(1, -1, state_dim))
             a.append(traj['actions'][si:si + max_len].reshape(1, -1, act_dim))
             r.append(traj['rewards'][si:si + max_len].reshape(1, -1, 1))
             if variant['goal_conditioned']:
-                g.append(traj['goals'][si:si + max_len].reshape(1, -1, goal_dim))
+                g.append(traj['infos/goal'][si:si + max_len].reshape(1, -1, goal_dim))
             if 'terminals' in traj:
                 d.append(traj['terminals'][si:si + max_len].reshape(1, -1))
             else:
