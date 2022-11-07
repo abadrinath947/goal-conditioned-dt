@@ -23,6 +23,7 @@ class D4RLIterableDataset(data.IterableDataset):
     def __init__(
         self,
         trajectories: List[Dict],
+        p_sample: np.ndarray: None,
         epoch_size: int = 2450000,
         index_batch_size: int = 64,
         goal_columns: Optional[Union[Tuple[int], List[int], np.ndarray]] = None,
@@ -43,6 +44,7 @@ class D4RLIterableDataset(data.IterableDataset):
         super().__init__()
 
         self.trajectories = trajectories
+        self.p_sample = p_sample
         self.epoch_size = epoch_size
         self.index_batch_size = index_batch_size
         self.goal_columns = goal_columns
@@ -52,7 +54,7 @@ class D4RLIterableDataset(data.IterableDataset):
         # Credit to Dibya Ghosh's GCSL codebase for the logic in the following block:
         # https://github.com/dibyaghosh/gcsl/blob/
         # cfae5609cee79e5a2228fb7653451023c41a64cb/gcsl/algo/buffer.py#L78
-        trajectory_indices = np.random.choice(len(self.trajectories), self.index_batch_size)
+        trajectory_indices = np.random.choice(len(self.trajectories), self.index_batch_size, p = self.p_sample)
         proportional_indices_1 = np.random.rand(self.index_batch_size)
         proportional_indices_2 = np.random.rand(self.index_batch_size)
         lengths = np.array([len(self.trajectories[i]) for i in trajectory_indices])
@@ -120,7 +122,7 @@ class D4RLIterableDataset(data.IterableDataset):
             return s, a, r, d, g, timesteps, mask
         return s, a, r, d, rtg, timesteps, mask
 
-    def _sample_batch(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _sample_batch(self) -> Tuple:
         trajectory_indices, start_indices, goal_indices = self._sample_indices()
         s, a, r, d, cond, timesteps, mask = self._fetch_trajectories(trajectory_indices, 
                                                                      start_indices, 
@@ -135,7 +137,6 @@ class D4RLIterableDataset(data.IterableDataset):
         while examples_yielded < self.epoch_size:
             yield self._sample_batch()
             examples_yielded += self.index_batch_size
-
 
     def __len__(self) -> int:
         """The number of examples in an epoch. Used by the trainer to count epochs."""
